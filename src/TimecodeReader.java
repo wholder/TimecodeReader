@@ -79,7 +79,7 @@ public class TimecodeReader extends JFrame implements Runnable {
 
     private JPanel getTitledPanel (String title, JComponent comp) {
       JPanel frame = new JPanel();
-      Border gap = BorderFactory.createEmptyBorder(4, 4, 4, 4);
+      Border gap = BorderFactory.createEmptyBorder(4, 4, 0, 4);
       frame.setBorder(BorderFactory.createCompoundBorder(gap,
                       BorderFactory.createTitledBorder(title)));
       frame.add(comp);
@@ -335,7 +335,10 @@ public class TimecodeReader extends JFrame implements Runnable {
     setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
     setLayout(new BorderLayout());
     add(timecode = new TimeCode(), BorderLayout.CENTER);
-    add(capture = new JButton("Start"), BorderLayout.SOUTH);
+    JPanel buttonPanel =  new JPanel(new BorderLayout());
+    buttonPanel.setBorder(BorderFactory.createEmptyBorder(0, 4, 4, 4));
+    buttonPanel.add(capture = new JButton("Start"), BorderLayout.CENTER);
+    add(buttonPanel, BorderLayout.SOUTH);
     capture.setFont(capture.getFont().deriveFont(28f));
     capture.setEnabled(true);
     addWindowListener(new WindowAdapter() {
