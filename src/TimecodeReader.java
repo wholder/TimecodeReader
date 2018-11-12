@@ -21,7 +21,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     private static final int      SYNC = 0xBFFC;
     private JLabel                timeView;
     private JCheckBox             user59, user58, user27, user43, user11, user10;
-    private JLabel                userData;
+    private JLabel                userData, frameRate;
     private JProgressBar          levelMeter;
     private PipedInputStream      pipeIn;
     private PipedOutputStream     pipeOut;
@@ -42,20 +42,17 @@ public class TimecodeReader extends JFrame implements Runnable {
     private int                   frameWord = 0;
     private int                   lastSample;
     private int                   interval;
+    private int                   lastSecond;
+    private int                   frameCount;
 
     private TimeCode () {
       setLayout(new BorderLayout());
-      // Creat Timecode subpanel
-      JPanel timePanel = new JPanel();
-      Border gap = BorderFactory.createEmptyBorder(4, 4, 4, 4);
-      timePanel.setBorder(BorderFactory.createCompoundBorder(gap,
-                          BorderFactory.createTitledBorder("Timecode:")));
-      timePanel.add(timeView = new JLabel());
-      add(timePanel, BorderLayout.NORTH);
+      // Create Timecode Panel
+      add(getTitledPanel("Timecode:", timeView = new JLabel()), BorderLayout.NORTH);
+      timeView.setFont(new Font("Courier", Font.PLAIN, 48));
+      timeView.setVerticalAlignment(SwingConstants.CENTER);
+      timeView.setHorizontalAlignment(SwingConstants.CENTER);
       // Creatae User Bits subpanel
-      JPanel bitsPanel = new JPanel();
-      bitsPanel.setBorder(BorderFactory.createCompoundBorder(gap,
-                          BorderFactory.createTitledBorder("Information Bits:")));
       JPanel indicators = new JPanel(new GridLayout(2, 1));
       JPanel userBits = new JPanel(new GridLayout(1, 6));
       userBits.add(user59 = new JCheckBox("Bit 59"));
@@ -67,20 +64,26 @@ public class TimecodeReader extends JFrame implements Runnable {
       indicators.add(userData = new JLabel("- - - -", SwingConstants.CENTER));
       userData.setFont(new Font("Courier", Font.PLAIN, 32));
       indicators.add(userBits);
-      bitsPanel.add(indicators);
-      add(bitsPanel, BorderLayout.CENTER);
-      // Add level Meter using ProgressBar
-      JPanel meterPanel = new JPanel(new BorderLayout());
-      meterPanel.setBorder(BorderFactory.createCompoundBorder(gap,
-                           BorderFactory.createTitledBorder("Input Level:")));
-      levelMeter = new JProgressBar(0, 100);
+      add(getTitledPanel("Information Bits:", indicators), BorderLayout.CENTER);
+      JPanel southSet = new JPanel(new GridLayout(2, 1));
+      // Create Input Level Panel
+      JPanel meterPanel = getTitledPanel("Input Level:", levelMeter = new JProgressBar(0, 100));
+      meterPanel.setLayout(new BorderLayout());
       levelMeter.setValue(0);
       meterPanel.add(levelMeter, BorderLayout.CENTER);
-      add(meterPanel, BorderLayout.SOUTH);
-      timeView.setFont(new Font("Courier", Font.PLAIN, 48));
-      timeView.setVerticalAlignment(SwingConstants.CENTER);
-      timeView.setHorizontalAlignment(SwingConstants.CENTER);
+      southSet.add(getTitledPanel("Estimated Frame Rate:", frameRate = new JLabel("--")));
+      southSet.add(meterPanel);
+      add(southSet, BorderLayout.SOUTH);
       decodeFrame(new int[4]);
+    }
+
+    private JPanel getTitledPanel (String title, JComponent comp) {
+      JPanel frame = new JPanel();
+      Border gap = BorderFactory.createEmptyBorder(4, 4, 4, 4);
+      frame.setBorder(BorderFactory.createCompoundBorder(gap,
+                      BorderFactory.createTitledBorder(title)));
+      frame.add(comp);
+      return frame;
     }
 
     private void setFormat (AudioFormat format) {
@@ -276,6 +279,13 @@ public class TimecodeReader extends JFrame implements Runnable {
               Integer.toHexString((frame[0] >> 12) & 0x0F) +
               Integer.toHexString((frame[0] >> 4) & 0x0F);
       userData.setText(userFields);
+      // Update Frame Rate Calculation
+      if (secUnits != lastSecond) {
+        lastSecond = secUnits;
+        frameRate.setText((frameCount + 1) + " fps");
+        frameCount = 0;
+      }
+      frameCount = Math.max(frameCount, frmUnits + frmTens * 10);
       // Format timecode as ASCII String
       String buf =
           Integer.toString(hrsTens) +
