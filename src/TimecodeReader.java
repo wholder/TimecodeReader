@@ -13,7 +13,7 @@ public class TimecodeReader extends JFrame implements Runnable {
   private boolean                 running, displaying;
   private final JButton           capture;
   private final TimeCode          timecode;
-  private JMenu                   menu = new JMenu("Input");
+  private JMenu                   inputMenu;
   private Mixer                   selectedMixer;
   private Thread                  runThread;
 
@@ -355,17 +355,18 @@ public class TimecodeReader extends JFrame implements Runnable {
         System.exit(0);
       }
     });
+    inputMenu = new JMenu("Input");
     capture.addActionListener(e -> {
       if (displaying) {
         capture.setText("Start");
         running = false;
         displaying = false;
-        menu.setEnabled(true);
+        inputMenu.setEnabled(true);
       } else {
         (runThread = new Thread(this)).start();
         capture.setText("Stop");
         displaying = true;
-        menu.setEnabled(false);
+        inputMenu.setEnabled(false);
       }
     });
     // Add Menu Bar
@@ -386,7 +387,7 @@ public class TimecodeReader extends JFrame implements Runnable {
         }
         JRadioButtonMenuItem mItem = new JRadioButtonMenuItem(input, inputSelected);
         hasInput |= inputSelected;
-        menu.add(mItem);
+        inputMenu.add(mItem);
         group.add(mItem);
         mItem.addActionListener(ev -> {
           String name = ev.getActionCommand();
@@ -397,7 +398,7 @@ public class TimecodeReader extends JFrame implements Runnable {
       }
     }
     capture.setEnabled(hasInput);
-    menuBar.add(menu);
+    menuBar.add(inputMenu);
     // Track window move events and save in prefs
     addComponentListener(new ComponentAdapter() {
       public void componentMoved (ComponentEvent ev)  {
