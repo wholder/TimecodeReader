@@ -56,11 +56,17 @@ public class TimecodeReader extends JFrame implements Runnable {
       JPanel indicators = new JPanel(new GridLayout(2, 1));
       JPanel userBits = new JPanel(new GridLayout(1, 6));
       userBits.add(user59 = new JCheckBox("Bit 59"));
+      user59.setToolTipText("<html>If 25 fps, bit 59 is for polarity<br>correction, else it's the BFG2 Flag</html>");
       userBits.add(user58 = new JCheckBox("Bit 58"));
+      user58.setToolTipText("Clock Sync Flag");
       userBits.add(user43 = new JCheckBox("Bit 43"));
-      userBits.add(user27 = new JCheckBox("Bit 23"));
+      user43.setToolTipText("<html>If 25 fps, bit 43 is the BFG2 Flag,<br>else it's the BFG0 Flag</html>");
+      userBits.add(user27 = new JCheckBox("Bit 27"));
+      user27.setToolTipText("<html>If 25 fps, bit 43 is the BFG0 Flag,<br>else it's for polarity correction</html>");
       userBits.add(user11 = new JCheckBox("Bit 11"));
+      user11.setToolTipText("Color Frame Flag");
       userBits.add(user10 = new JCheckBox("Bit 10"));
+      user10.setToolTipText("Drop Frame Flag");
       indicators.add(userData = new JLabel("- - - -", SwingConstants.CENTER));
       userData.setFont(new Font("Courier", Font.PLAIN, 32));
       indicators.add(userBits);
