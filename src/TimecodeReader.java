@@ -49,7 +49,7 @@ public class TimecodeReader extends JFrame implements Runnable {
       setLayout(new BorderLayout());
       // Create Timecode Panel
       add(getTitledPanel("Timecode:", timeView = new JLabel()), BorderLayout.NORTH);
-      timeView.setFont(new Font("Courier", Font.PLAIN, 48));
+      timeView.setFont(new Font("Courier", Font.PLAIN, 60));
       timeView.setVerticalAlignment(SwingConstants.CENTER);
       timeView.setHorizontalAlignment(SwingConstants.CENTER);
       // Creatae User Bits subpanel
@@ -336,7 +336,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     setLayout(new BorderLayout());
     add(timecode = new TimeCode(), BorderLayout.CENTER);
     add(capture = new JButton("Start"), BorderLayout.SOUTH);
-    capture.setFont(capture.getFont().deriveFont(32f));
+    capture.setFont(capture.getFont().deriveFont(28f));
     capture.setEnabled(true);
     addWindowListener(new WindowAdapter() {
       @Override
