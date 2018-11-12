@@ -409,6 +409,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
     setLocation(prefs.getInt("window.x", 10), prefs.getInt("window.y", 10));
     pack();
+    setResizable(false);
     setVisible(true);
   }
 
