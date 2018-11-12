@@ -414,7 +414,7 @@ public class TimecodeReader extends JFrame implements Runnable {
   }
 
   private AudioFormat getFormat () {
-    float sampleRate = 44100;
+    float sampleRate = 22050;
     int sampleSizeInBits = 16;
     int channels = 1;
     // Sample rate 44,100 Hz, 16 bit, 1 channel, signed, bigEndian
