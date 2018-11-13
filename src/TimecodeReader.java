@@ -124,6 +124,7 @@ public class TimecodeReader extends JFrame implements Runnable {
           });
           volumeSlider.setEnabled(true);
         } else {
+          volumeSlider.setValue(100);
           volumeSlider.setEnabled(false);
         }
       } catch (LineUnavailableException ex) {
