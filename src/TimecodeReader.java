@@ -4,6 +4,8 @@ import javax.swing.border.Border;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.prefs.Preferences;
 
 // Reference: https://en.wikipedia.org/wiki/Linear_timecode
@@ -14,7 +16,7 @@ public class TimecodeReader extends JFrame implements Runnable {
   private final JButton           capture;
   private final TimeCode          timecode;
   private JMenu                   inputMenu;
-  private Mixer                   selectedMixer;
+  private InputSource             selectedInput;
   private Thread                  runThread;
 
   private class TimeCode extends JPanel implements Runnable {
@@ -22,11 +24,14 @@ public class TimecodeReader extends JFrame implements Runnable {
     private JLabel                timeView;
     private JCheckBox             user59, user58, user27, user43, user11, user10;
     private JLabel                userData, frameRate;
+    private JSlider               volumeSlider;
     private JProgressBar          levelMeter;
     private PipedInputStream      pipeIn;
     private PipedOutputStream     pipeOut;
     private AudioFormat           format;
     private boolean               running;
+    private Port                  mixerPort;
+    private FloatControl          volumeControl;
     // AudioFormat-related variables
     private AudioFormat.Encoding  encoding;
     private boolean               bigEndian;
@@ -71,14 +76,18 @@ public class TimecodeReader extends JFrame implements Runnable {
       userData.setFont(new Font("Courier", Font.PLAIN, 32));
       indicators.add(userBits);
       add(getTitledPanel("Information Bits:", indicators), BorderLayout.CENTER);
-      JPanel southSet = new JPanel(new GridLayout(2, 1));
-      // Create Input Level Panel
+      JPanel southSet = new JPanel(new BorderLayout());
+      // Create Input Level Meter Panel
       JPanel meterPanel = getTitledPanel("Input Level:", levelMeter = new JProgressBar(0, 100));
       meterPanel.setLayout(new BorderLayout());
       levelMeter.setValue(0);
-      meterPanel.add(levelMeter, BorderLayout.CENTER);
-      southSet.add(getTitledPanel("Estimated Frame Rate:", frameRate = new JLabel("--")));
-      southSet.add(meterPanel);
+      meterPanel.add(levelMeter, BorderLayout.NORTH);
+      meterPanel.add(volumeSlider = new JSlider(), BorderLayout.SOUTH);
+      volumeSlider.setMinimum(0);
+      volumeSlider.setMaximum(100);
+      volumeSlider.setEnabled(false);
+      southSet.add(getTitledPanel("Estimated Frame Rate:", frameRate = new JLabel("--")), BorderLayout.NORTH);
+      southSet.add(meterPanel, BorderLayout.CENTER);
       add(southSet, BorderLayout.SOUTH);
       decodeFrame(new int[4]);
     }
@@ -92,12 +101,34 @@ public class TimecodeReader extends JFrame implements Runnable {
       return frame;
     }
 
-    private void setFormat (AudioFormat format) {
-      this.format = format;
+    private void setFormat (InputSource source) {
+      this.format = source.format;
       encoding = format.getEncoding();
       bigEndian = format.isBigEndian();
       channels = format.getChannels();
       frameSize = format.getFrameSize();
+      // Setup Volume Control Mixer
+      try {
+        source.portMixer.open();
+        mixerPort = (Port) AudioSystem.getLine(source.inputType);
+        // Important: you must first open Port to get access to controls
+        mixerPort.open();
+        if (mixerPort.isControlSupported(FloatControl.Type.VOLUME)) {
+          volumeControl = (FloatControl) mixerPort.getControl(FloatControl.Type.VOLUME);
+          float curValue = volumeControl.getValue();
+          volumeSlider.setValue((int) (curValue * 100));
+          // Setup Volume Slider Change Hamdler
+          volumeSlider.addChangeListener(ev -> {
+            int value = volumeSlider.getValue();
+            volumeControl.setValue((float) value / 100);
+          });
+          volumeSlider.setEnabled(true);
+        } else {
+          volumeSlider.setEnabled(false);
+        }
+      } catch (LineUnavailableException ex) {
+        ex.printStackTrace();
+      }
     }
 
     private PipedOutputStream getPipeOut () {
@@ -119,6 +150,13 @@ public class TimecodeReader extends JFrame implements Runnable {
 
     private void close () {
       running = false;
+      volumeSlider.setEnabled(false);
+      if (mixerPort != null) {
+        mixerPort.close();
+      }
+      if (selectedInput != null) {
+        selectedInput.portMixer.close();
+      }
     }
 
     public void run () {
@@ -312,11 +350,10 @@ public class TimecodeReader extends JFrame implements Runnable {
 
   public void run () {
     try {
-      AudioFormat format = getFormat();
-      DataLine.Info dataLineInfo = new DataLine.Info(TargetDataLine.class, format);
-      TargetDataLine line = (TargetDataLine)  selectedMixer.getLine(dataLineInfo);
-      timecode.setFormat(format);
-      line.open(format);
+      DataLine.Info dataLineInfo = new DataLine.Info(TargetDataLine.class, selectedInput.format);
+      TargetDataLine line = (TargetDataLine)  selectedInput.targetMixer.getLine(dataLineInfo);
+      timecode.setFormat(selectedInput);
+      line.open(selectedInput.format);
       line.start();
       byte buffer[] = new byte[1024];
       running = true;
@@ -383,28 +420,23 @@ public class TimecodeReader extends JFrame implements Runnable {
     setJMenuBar(menuBar);
     // Add "Input" menu
     ButtonGroup group = new ButtonGroup();
-    Mixer.Info[] mixerInfos = AudioSystem.getMixerInfo();
     boolean hasInput = false;
-    for (Mixer.Info mixerInfo : mixerInfos) {
-      Mixer mixer = AudioSystem.getMixer(mixerInfo);
-      Line.Info[] lineInfos = mixer.getTargetLineInfo();
-      if (lineInfos.length > 0 && lineInfos[0].getLineClass().equals(TargetDataLine.class)) {
-        String input = mixerInfo.getName() + " (" + mixerInfo.getVendor() + ")";
-        boolean inputSelected = input.equals(prefs.get("audio.input", null));
-        if (inputSelected) {
-          selectedMixer = mixer;
-        }
-        JRadioButtonMenuItem mItem = new JRadioButtonMenuItem(input, inputSelected);
-        hasInput |= inputSelected;
-        inputMenu.add(mItem);
-        group.add(mItem);
-        mItem.addActionListener(ev -> {
-          String name = ev.getActionCommand();
-          selectedMixer = mixer;
-          prefs.put("audio.input", name);
-          capture.setEnabled(true);
-        });
+    for (InputSource source : getInputSources(new AudioFormat(44100, 16, 1, true, true))) {
+      String input = source.mixerName + " (" + source.targetMixer.getMixerInfo().getVendor() + ")";
+      boolean inputSelected = input.equals(prefs.get("audio.input", null));
+      if (inputSelected) {
+        selectedInput = source;
       }
+      JRadioButtonMenuItem mItem = new JRadioButtonMenuItem(input, inputSelected);
+      hasInput |= inputSelected;
+      inputMenu.add(mItem);
+      group.add(mItem);
+      mItem.addActionListener(ev -> {
+        String name = ev.getActionCommand();
+        selectedInput = source;
+        prefs.put("audio.input", name);
+        capture.setEnabled(true);
+      });
     }
     capture.setEnabled(hasInput);
     menuBar.add(inputMenu);
@@ -423,15 +455,58 @@ public class TimecodeReader extends JFrame implements Runnable {
     setVisible(true);
   }
 
-  private AudioFormat getFormat () {
-    float sampleRate = 22050;
-    int sampleSizeInBits = 16;
-    int channels = 1;
-    // Sample rate 44,100 Hz, 16 bit, 1 channel, signed, bigEndian
-    return new AudioFormat(sampleRate, sampleSizeInBits, channels, true, true);
+  static class InputSource {
+    String    mixerName;
+    Mixer     targetMixer, portMixer;
+    Port.Info inputType;
+    AudioFormat format;
+
+    InputSource (String mixerName, Mixer targetMixer, Mixer portMixer, Port.Info inputType, AudioFormat format) {
+      this.mixerName = mixerName;
+      this.targetMixer = targetMixer;
+      this.portMixer = portMixer;
+      this.inputType = inputType;
+      this.format = format;
+    }
   }
 
-  public static void main (String args[]) throws Exception {
+  private static java.util.List<InputSource> getInputSources (AudioFormat format) {
+    List<InputSource> srcList = new ArrayList<>();
+    loop:
+    for (Mixer.Info mixer : AudioSystem.getMixerInfo()) {
+      String mixerName = mixer.getName();
+      String[] devices = {mixerName, "MICROPHONE", "LINE_IN"};
+      for (String device : devices) {
+        Port.Info inputType = new Port.Info(Port.class, device, true);
+        Mixer targetMixer = AudioSystem.getMixer(mixer);
+        DataLine.Info  targetDataLineInfo = new DataLine.Info(TargetDataLine.class, format);
+        if (targetMixer.isLineSupported(targetDataLineInfo)) {
+          for (Mixer.Info portMixerInfo : AudioSystem.getMixerInfo()) {
+            String portMixerName = portMixerInfo.getName();
+            // Find port mixer by prefixing name with "Port "
+            if (("Port " + mixerName).equals(portMixerName)) {
+              Mixer portMixer = AudioSystem.getMixer(portMixerInfo);
+              // Check if inputType matches that used to select targetMixer
+              boolean lineTypeSupported = portMixer.isLineSupported(inputType);
+              if (lineTypeSupported) {
+                try {
+                  // Check if we can get access to a TargetDataLine object to read data
+                  if (AudioSystem.getLine(targetDataLineInfo) != null) {
+                    srcList.add(new InputSource(mixerName, targetMixer, portMixer, inputType, format));
+                  }
+                } catch (LineUnavailableException e) {
+                  e.printStackTrace();
+                }
+                continue loop;
+              }
+            }
+          }
+        }
+      }
+    }
+    return srcList;
+  }
+  public static void main (String args[]) {
     new TimecodeReader();
   }
 }
