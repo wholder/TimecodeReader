@@ -134,14 +134,14 @@ public class TimecodeReader extends JFrame implements Runnable {
 
     private PipedOutputStream getPipeOut () {
       try {
+        pipeOut = new PipedOutputStream();
+        pipeIn = new PipedInputStream();
+        pipeOut.connect(pipeIn);
         if (!running) {
           if (format != null) {
             running = true;
             new Thread(this).start();
           }
-          pipeOut = new PipedOutputStream();
-          pipeIn = new PipedInputStream();
-          pipeOut.connect(pipeIn);
         }
       } catch (IOException ex) {
         ex.printStackTrace();
@@ -161,14 +161,13 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
 
     public void run () {
-      BufferedInputStream bufIn = new BufferedInputStream(pipeIn);
+      byte[] buffer = new byte[512];
       while (running) {
         try {
-          int size;
-          while ((size = bufIn.available()) > 0) {
-            byte[] buffer = new byte[size];
-            bufIn.read(buffer);
-            process(buffer);
+          int avail;
+          while ((avail = pipeIn.available()) > 0) {
+            int size = pipeIn.read(buffer, 0, avail > buffer.length ? buffer.length : avail);
+            process(buffer, size);
           }
         } catch (IOException ex) {
           ex.printStackTrace();
@@ -182,17 +181,17 @@ public class TimecodeReader extends JFrame implements Runnable {
       }
     }
 
-    private void process (byte[] buffer) {
-      int[] samples = new int[buffer.length / 2];
+    private void process (byte[] buffer, int count) {
+      int[] samples = new int[count / 2];
       if (encoding == AudioFormat.Encoding.PCM_SIGNED && channels == 1 && frameSize == 2) {
         if (bigEndian) {
           // Handle big Endian data
-          for (int ii = 0; ii < buffer.length; ii += 2) {
+          for (int ii = 0; ii < count; ii += 2) {
             samples[ii >> 1] = (buffer[ii] << 8) | (buffer[ii + 1] & 0xFF);
           }
         } else {
           // Handle little Endian data
-          for (int ii = 0; ii < buffer.length; ii += 2) {
+          for (int ii = 0; ii < count; ii += 2) {
             samples[ii >> 1] = (buffer[ii + 1] << 8) | (buffer[ii] & 0xFF);
           }
         }
@@ -241,6 +240,7 @@ public class TimecodeReader extends JFrame implements Runnable {
               }
               frameIndex = 0;
               bitCount = 0;
+              frameWord = 0;
             } else if (++bitCount >= 16) {
               if (frameIndex < 4) {
                 frame[frameIndex++] = frameWord;
@@ -360,9 +360,9 @@ public class TimecodeReader extends JFrame implements Runnable {
       running = true;
       PipedOutputStream pipeOut = timecode.getPipeOut();
       while (running) {
-        int count;
-        while ((count = line.available()) >= buffer.length) {
-          int size = line.read(buffer, 0, count > buffer.length ? buffer.length : count);
+        int avail;
+        while ((avail = line.available()) > 0) {
+          int size = line.read(buffer, 0, avail > buffer.length ? buffer.length : avail);
           pipeOut.write(buffer, 0, size);
         }
       }
@@ -422,7 +422,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     // Add "Input" menu
     ButtonGroup group = new ButtonGroup();
     boolean hasInput = false;
-    for (InputSource source : getInputSources(new AudioFormat(44100, 16, 1, true, true))) {
+    for (InputSource source : getInputSources(new AudioFormat(22050, 16, 1, true, true))) {
       String input = source.mixerName + " (" + source.targetMixer.getMixerInfo().getVendor() + ")";
       boolean inputSelected = input.equals(prefs.get("audio.input", null));
       if (inputSelected) {
