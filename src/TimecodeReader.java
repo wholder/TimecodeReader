@@ -471,6 +471,19 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
   }
 
+  /**
+   * This code enemuerates all the audio input sources available and attempts to pair them with an audio
+   * mixer than can access various controls, such as as gain, balance and mute.  Unfortunately, due to the
+   * rather obscure way that the Java Audio API is designed, this requires using a "trick". First, the code
+   * enumerates all the sources (Mixer objects) that can supply a TargetDataLine object, which is needed to
+   * read audio data from the input.  However, the Mixer object you can obtain this way provides way to access
+   * the controls...  So, we take the name of the Mixer we found and prefix it with the String "Port " and
+   * then scan for Mixer that matches this name, which we can then use to get access to the controls.
+   * However, as some input devices are given special names, such as "LINE_IN", or "MICROPHONE" we also have
+   * to try using this name in the Port.Info we construct in order scan and find a matching Mixer with controls.
+   * @param format specifies the AudioFormat the source must suport
+   * @return a List of InputSource objects, each of which describes an input source
+   */
   private static java.util.List<InputSource> getInputSources (AudioFormat format) {
     List<InputSource> srcList = new ArrayList<>();
     loop:
