@@ -38,8 +38,9 @@ public class TimecodeReader extends JFrame implements Runnable {
     private int                   channels;
     private int                   frameSize;
     // Timecode decoder variables (holds state between called to process() method)
-    private boolean               skipBit = false;
-    private boolean               bitValue = false;
+    private boolean               skipBit;
+    private boolean               bitValue;
+    private boolean               dropDetect;
     private int[]                 frame = new int[4];
     private int                   bitCount = 0;
     private int                   frameIndex = 0;
@@ -47,6 +48,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     private int                   frameWord = 0;
     private int                   lastSample;
     private int                   interval;
+    private int                   lastFrame;
     private int                   lastSecond;
     private int                   frameCount;
 
@@ -161,6 +163,8 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
 
     public void run () {
+      dropDetect = skipBit = bitValue = false;
+      frameWord = 0;
       byte[] buffer = new byte[512];
       while (running) {
         try {
@@ -324,12 +328,20 @@ public class TimecodeReader extends JFrame implements Runnable {
               Integer.toHexString((frame[0] >> 12) & 0x0F) +
               Integer.toHexString((frame[0] >> 4) & 0x0F);
       userData.setText(userFields);
+      // Check for Dropped Frames
+      int frameNum = frmTens * 10 + frmUnits;
+      int minsNum = minTens * 10 + minUnits;
+      if (frameNum == 2 && lastFrame != 1) {
+        dropDetect = minsNum % 10 != 0;
+      }
+      lastFrame = frameNum;
       // Update Frame Rate Calculation
       if (secUnits != lastSecond) {
         lastSecond = secUnits;
-        frameRate.setText((frameCount + 1) + " fps");
+        frameRate.setText((frameCount + 1) + " fps" + (dropDetect ? " (drop frame)" : ""));
         frameCount = 0;
       }
+
       frameCount = Math.max(frameCount, frmUnits + frmTens * 10);
       // Format timecode as ASCII String
       String buf =
@@ -341,7 +353,7 @@ public class TimecodeReader extends JFrame implements Runnable {
               ":" +
               Integer.toString(secTens) +
               Integer.toString(secUnits) +
-              ":" +
+              (bit10 ? ";" : ":") +
               Integer.toString(frmTens) +
               Integer.toString(frmUnits);
       timeView.setText(buf);
@@ -423,12 +435,13 @@ public class TimecodeReader extends JFrame implements Runnable {
     ButtonGroup group = new ButtonGroup();
     boolean hasInput = false;
     for (InputSource source : getInputSources(new AudioFormat(22050, 16, 1, true, true))) {
-      String input = source.mixerName + " (" + source.targetMixer.getMixerInfo().getVendor() + ")";
+      String input = source.mixerName;
       boolean inputSelected = input.equals(prefs.get("audio.input", null));
       if (inputSelected) {
         selectedInput = source;
       }
       JRadioButtonMenuItem mItem = new JRadioButtonMenuItem(input, inputSelected);
+      mItem.setToolTipText(source.targetMixer.getMixerInfo().getVendor());
       hasInput |= inputSelected;
       inputMenu.add(mItem);
       group.add(mItem);
