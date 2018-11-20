@@ -1,7 +1,6 @@
 import javax.sound.sampled.*;
 import javax.swing.*;
 import javax.swing.border.Border;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
@@ -367,10 +366,8 @@ public class TimecodeReader extends JFrame implements Runnable {
         case "TC + Raw Frame":
           timecodeLog.append(buf + " - ");
         case "Raw Frame":
-          StringBuilder hex = new StringBuilder();
-          hex.append(toHex(frame[3])).append(':').append(toHex(frame[2])).append(':');
-          hex.append(toHex(frame[1])).append(':').append(toHex(frame[0])).append('\n');
-          timecodeLog.append(hex.toString());
+          String hex = toHex(frame[3]) + ':' + toHex(frame[2]) + ':' + toHex(frame[1]) + ':' + toHex(frame[0]) + '\n';
+          timecodeLog.append(hex);
           break;
       }
       repaint();
@@ -419,7 +416,6 @@ public class TimecodeReader extends JFrame implements Runnable {
     JTabbedPane tabs = new JTabbedPane();
     tabs.addTab("Monitor", timecode = new TimeCode());
     JPanel recFrame = new JPanel(new BorderLayout());
-    Border gap = BorderFactory.createEmptyBorder(4, 4, 0, 4);
     recFrame.setBorder( BorderFactory.createEmptyBorder(4, 4, 4, 4));
     recFrame.add( new JScrollPane(timecodeLog = new JTextArea()), BorderLayout.CENTER);
     tabs.addTab("Record", recFrame);
@@ -523,9 +519,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
     recordMenu.addSeparator();
     JMenuItem recClear = new JMenuItem("Clear Recording");
-    recClear.addActionListener(ex -> {
-      timecodeLog.setText("");
-    });
+    recClear.addActionListener(ex -> timecodeLog.setText(""));
     recordMenu.add(recClear);
     // Add "Save Recording As..." Menu Item
     recordMenu.addSeparator();
@@ -562,7 +556,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     setVisible(true);
   }
 
-  static void saveFile (File file, String text) {
+  private void saveFile (File file, String text) {
     try {
       FileOutputStream out = new FileOutputStream(file);
       out.write(text.getBytes(StandardCharsets.UTF_8));
