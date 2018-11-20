@@ -1,25 +1,30 @@
 import javax.sound.sampled.*;
 import javax.swing.*;
 import javax.swing.border.Border;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.List;
 import java.util.prefs.Preferences;
 
 import static javax.swing.JOptionPane.showMessageDialog;
 
-// Reference: https://en.wikipedia.org/wiki/Linear_timecode
+  // Reference: https://en.wikipedia.org/wiki/Linear_timecode
 
 public class TimecodeReader extends JFrame implements Runnable {
   private transient Preferences   prefs = Preferences.userRoot().node(this.getClass().getName());
   private boolean                 running, displaying;
   private final JButton           capture;
   private final TimeCode          timecode;
-  private JMenu                   inputMenu;
+  private final JTextArea         timecodeLog;
+  private JMenu                   inputMenu, recordMenu;
   private InputSource             selectedInput;
   private Thread                  runThread;
+  private String                  recordWhat = "None";
+  private boolean                 recording;
 
   private class TimeCode extends JPanel implements Runnable {
     private static final int      SYNC = 0xBFFC;
@@ -355,8 +360,29 @@ public class TimecodeReader extends JFrame implements Runnable {
               Integer.toString(frmTens) +
               Integer.toString(frmUnits);
       timeView.setText(buf);
+      switch (recordWhat) {
+        case "Timecode":
+          timecodeLog.append(buf + "\n");
+          break;
+        case "TC + Raw Frame":
+          timecodeLog.append(buf + " - ");
+        case "Raw Frame":
+          StringBuilder hex = new StringBuilder();
+          hex.append(toHex(frame[3])).append(':').append(toHex(frame[2])).append(':');
+          hex.append(toHex(frame[1])).append(':').append(toHex(frame[0])).append('\n');
+          timecodeLog.append(hex.toString());
+          break;
+      }
       repaint();
     }
+  }
+
+  private String toHex (int val) {
+    StringBuilder buf = new StringBuilder(Integer.toHexString(val));
+    while (buf.length() < 8) {
+      buf.insert(0, '0');
+    }
+    return buf.toString();
   }
 
   public void run () {
@@ -390,7 +416,16 @@ public class TimecodeReader extends JFrame implements Runnable {
     super("Timecode Reader");
     setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
     setLayout(new BorderLayout());
-    add(timecode = new TimeCode(), BorderLayout.CENTER);
+    JTabbedPane tabs = new JTabbedPane();
+    tabs.addTab("Monitor", timecode = new TimeCode());
+    JPanel recFrame = new JPanel(new BorderLayout());
+    Border gap = BorderFactory.createEmptyBorder(4, 4, 0, 4);
+    recFrame.setBorder( BorderFactory.createEmptyBorder(4, 4, 4, 4));
+    recFrame.add( new JScrollPane(timecodeLog = new JTextArea()), BorderLayout.CENTER);
+    tabs.addTab("Record", recFrame);
+    timecodeLog.setFont(new Font("Monaco", Font.PLAIN, 12));
+    timecodeLog.setMargin(new Insets(1, 3, 1, 3));
+    add(tabs, BorderLayout.CENTER);
     JPanel buttonPanel =  new JPanel(new BorderLayout());
     buttonPanel.setBorder(BorderFactory.createEmptyBorder(0, 4, 4, 4));
     buttonPanel.add(capture = new JButton("Start"), BorderLayout.CENTER);
@@ -422,6 +457,10 @@ public class TimecodeReader extends JFrame implements Runnable {
         running = false;
         displaying = false;
         inputMenu.setEnabled(true);
+        recordMenu.setEnabled(true);
+        if (recording) {
+          timecodeLog.append("Stopped\n");
+        }
       } else {
         // Start input capture
         if (selectedInput != null) {
@@ -429,6 +468,7 @@ public class TimecodeReader extends JFrame implements Runnable {
           capture.setText("Stop");
           displaying = true;
           inputMenu.setEnabled(false);
+          recordMenu.setEnabled(false);
         } else {
           // Just in case
           showMessageDialog(this, "Select Input Source", "Error", JOptionPane.PLAIN_MESSAGE, null);
@@ -439,7 +479,7 @@ public class TimecodeReader extends JFrame implements Runnable {
     JMenuBar menuBar = new JMenuBar();
     setJMenuBar(menuBar);
     // Add "Input" menu
-    ButtonGroup group = new ButtonGroup();
+    ButtonGroup inGroup = new ButtonGroup();
     boolean hasInput = false;
     for (InputSource source : getInputSources(new AudioFormat(22050, 16, 1, true, true))) {
       String input = source.mixerInfo.getName().trim();
@@ -452,7 +492,7 @@ public class TimecodeReader extends JFrame implements Runnable {
       mItem.setToolTipText(source.mixerInfo.getVendor());
       hasInput |= inputSelected;
       inputMenu.add(mItem);
-      group.add(mItem);
+      inGroup.add(mItem);
       mItem.addActionListener(ev -> {
         String name = ev.getActionCommand();
         selectedInput = source;
@@ -463,6 +503,50 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
     capture.setEnabled(hasInput);
     menuBar.add(inputMenu);
+    // Add "Record" Menu
+    recordMenu = new JMenu("Record");
+    menuBar.add((recordMenu));
+    ButtonGroup recGroup = new ButtonGroup();
+    recordWhat = prefs.get("record.type", recordWhat);
+    recording = !recordWhat.equals("None");
+    for (String recType : new String[] {"None", "Timecode", "Raw Frame", "TC + Raw Frame"}) {
+      boolean inputSelected = recType.equals(recordWhat);
+      JRadioButtonMenuItem mItem = new JRadioButtonMenuItem(recType, inputSelected);
+      recordMenu.add(mItem);
+      recGroup.add(mItem);
+      mItem.addActionListener(ev -> {
+        String name = ev.getActionCommand();
+        recordWhat = recType;
+        prefs.put("record.type", name);
+        recording = !name.equals("None");
+      });
+    }
+    recordMenu.addSeparator();
+    JMenuItem recClear = new JMenuItem("Clear Recording");
+    recClear.addActionListener(ex -> {
+      timecodeLog.setText("");
+    });
+    recordMenu.add(recClear);
+    // Add "Save Recording As..." Menu Item
+    recordMenu.addSeparator();
+    JMenuItem saveAs = new JMenuItem("Save Recording As...");
+    recordMenu.add(saveAs);
+    saveAs.addActionListener(e -> {
+      JFileChooser fc = new JFileChooser();
+      fc.setSelectedFile(new File(prefs.get("default.dir", "/")));
+      if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+        File sFile = fc.getSelectedFile();
+        if (sFile.exists()) {
+          if (JOptionPane.showConfirmDialog(this, "Overwrite Existing file?", "Warning", JOptionPane.YES_NO_OPTION,
+                                            JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {
+            saveFile(sFile, timecodeLog.getText());
+          }
+        } else {
+          saveFile(sFile, timecodeLog.getText());
+        }
+        prefs.put("default.dir", sFile.getAbsolutePath());
+      }
+    });
     // Track window move events and save in prefs
     addComponentListener(new ComponentAdapter() {
       public void componentMoved (ComponentEvent ev)  {
@@ -476,6 +560,16 @@ public class TimecodeReader extends JFrame implements Runnable {
     pack();
     setResizable(false);
     setVisible(true);
+  }
+
+  static void saveFile (File file, String text) {
+    try {
+      FileOutputStream out = new FileOutputStream(file);
+      out.write(text.getBytes(StandardCharsets.UTF_8));
+      out.close();
+    } catch (IOException ex) {
+      ex.printStackTrace();
+    }
   }
 
   static class InputSource {
