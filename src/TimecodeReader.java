@@ -578,6 +578,29 @@ public class TimecodeReader extends JFrame implements Runnable {
     }
   }
 
+  static class DupMap<K,V> extends TreeMap<K,V> {
+    Map<K,Integer> counts = new HashMap<>();
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public V put (K name, V val) {
+      if (containsKey(name)) {
+        if (counts.containsKey(name)) {
+          int next = counts.get(name) + 1;
+          super.put((K) (name + "-" + Integer.toString(next)), val);
+          counts.put(name, next);
+        } else {
+          super.put((K) (name + "-" + Integer.toString(1)), remove(name));
+          super.put((K) (name + "-" + Integer.toString(2)), val);
+          counts.put(name, 2);
+        }
+      } else {
+        super.put(name, val);
+      }
+      return val;
+    }
+  }
+
   /**
    * This code enemuerates all the audio input sources available and attempts to pair them with
    * an audio mixer than can access the various controls, such as as gain, balance and mute.
@@ -586,8 +609,9 @@ public class TimecodeReader extends JFrame implements Runnable {
    * @return a List of InputSource objects, each of which describes an input source
    */
   private static java.util.List<InputSource> getInputSources (AudioFormat format) {
-    Map<String, Mixer.Info> mixers = new TreeMap<>();
-    Map<String, Line.Info> sources = new HashMap<>();
+    // Use DupMap to handle devices that return the same name
+    Map<String, Mixer.Info> mixers = new DupMap<>();
+    Map<String, Line.Info> sources = new DupMap<>();
     for (Mixer.Info mixerInfo : AudioSystem.getMixerInfo()) {
       Mixer targetMixer = AudioSystem.getMixer(mixerInfo);
       String mixerName = mixerInfo.getName().trim();
